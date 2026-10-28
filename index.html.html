@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TEE Target Calculator</title>
+<meta name="description" content="Enter your ICA score to see the TEE marks you need for each grade.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: dark exam-hall night, two-column board (controls | gauge), what-if strip and grade ladder below */
+:root{
+  --bg:#0c1a22; --bg2:#10242f; --surface:rgba(20,40,52,.72); --surface-solid:#14303d;
+  --ink:#eef4f2; --muted:#93aab0; --line:rgba(160,200,205,.16);
+  --amber:#ffb547; --coral:#ff6b5e; --mint:#4fe0b0; --sky:#6ec3ff;
+  --amber-soft:rgba(255,181,71,.14); --coral-soft:rgba(255,107,94,.15); --mint-soft:rgba(79,224,176,.14);
+  --blob1:#1d5a6b; --blob2:#6b3f1d; --blob3:#1d3f6b;
+  --display:"Unbounded",system-ui,sans-serif;
+  --body:"Manrope",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#eef3f1; --bg2:#e2ebe8; --surface:rgba(255,255,255,.78); --surface-solid:#ffffff;
+  --ink:#10232b; --muted:#566d73; --line:rgba(16,35,43,.12);
+  --amber:#c97a00; --coral:#d9382b; --mint:#0d9467; --sky:#1677c8;
+  --amber-soft:rgba(201,122,0,.12); --coral-soft:rgba(217,56,43,.1); --mint-soft:rgba(13,148,103,.12);
+  --blob1:#b8e2db; --blob2:#f6d6a8; --blob3:#c3d8f5; color-scheme:light}}
+:root[data-theme="light"]{
+  --bg:#eef3f1; --bg2:#e2ebe8; --surface:rgba(255,255,255,.78); --surface-solid:#ffffff;
+  --ink:#10232b; --muted:#566d73; --line:rgba(16,35,43,.12);
+  --amber:#c97a00; --coral:#d9382b; --mint:#0d9467; --sky:#1677c8;
+  --amber-soft:rgba(201,122,0,.12); --coral-soft:rgba(217,56,43,.1); --mint-soft:rgba(13,148,103,.12);
+  --blob1:#b8e2db; --blob2:#f6d6a8; --blob3:#c3d8f5; color-scheme:light}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  min-height:100vh;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:calc(28px + env(safe-area-inset-top,0px)) calc(48px + env(safe-area-inset-bottom,0px));
+  overflow-x:hidden;position:relative;
+}
+/* ambient moving background */
+.bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.bg::after{content:"";position:absolute;inset:0;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:44px 44px;mask-image:radial-gradient(ellipse at 50% 30%,#000 20%,transparent 75%);opacity:.6}
+.blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.55}
+.b1{width:420px;height:420px;background:var(--blob1);top:-120px;left:-80px;animation:drift1 22s ease-in-out infinite alternate}
+.b2{width:360px;height:360px;background:var(--blob2);top:30%;right:-120px;animation:drift2 26s ease-in-out infinite alternate}
+.b3{width:380px;height:380px;background:var(--blob3);bottom:-140px;left:25%;animation:drift3 30s ease-in-out infinite alternate}
+@keyframes drift1{to{transform:translate(160px,120px) scale(1.15)}}
+@keyframes drift2{to{transform:translate(-180px,80px) scale(.9)}}
+@keyframes drift3{to{transform:translate(120px,-140px) scale(1.1)}}
+
+.wrap{position:relative;z-index:1;max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+
+header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;
+  animation:rise .7s cubic-bezier(.2,.8,.2,1) both}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+h1{font-family:var(--display);font-weight:800;font-size:clamp(1.9rem,6vw,3.1rem);line-height:1.02;margin:6px 0 0;letter-spacing:-.02em;text-wrap:balance}
+h1 em{font-style:normal;color:var(--amber)}
+.formula{font-family:var(--mono);font-size:.82rem;color:var(--muted);background:var(--surface);border:1px solid var(--line);
+  padding:8px 12px;border-radius:10px;backdrop-filter:blur(10px)}
+.formula b{color:var(--ink);font-weight:700}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);animation:rise .7s cubic-bezier(.2,.8,.2,1) both}
+.card:nth-of-type(2){animation-delay:.08s}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.lbl{display:block;font-family:var(--mono);font-size:.7rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+
+.board{display:grid;grid-template-columns:1.05fr 1fr;gap:20px}
+@media (max-width:760px){.board{grid-template-columns:1fr}}
+.board>*{min-width:0}
+
+/* ICA control */
+.ica-top{display:flex;align-items:center;gap:10px}
+.step{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--surface-solid);color:var(--ink);
+  font-family:var(--mono);font-size:1.3rem;cursor:pointer;transition:transform .15s,border-color .15s}
+.step:hover{border-color:var(--amber)}
+.step:active{transform:scale(.92)}
+#ica{font-family:var(--display);font-weight:800;font-size:2.6rem;width:3.4ch;text-align:center;background:transparent;border:none;color:var(--ink);padding:0;
+  -moz-appearance:textfield}
+#ica::-webkit-outer-spin-button,#ica::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+#ica:focus{outline:none}
+.ica-num{display:flex;align-items:baseline;gap:6px;flex:1;justify-content:center;border-bottom:2px dashed var(--line);transition:border-color .2s}
+.ica-num:focus-within{border-color:var(--amber)}
+.ica-num span{font-family:var(--mono);color:var(--muted)}
+.err{color:var(--coral);font-size:.85rem;margin-top:8px}
+
+/* custom range */
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent;margin:16px 0 4px;cursor:pointer;--p:50%}
+input[type=range]::-webkit-slider-runnable-track{height:8px;border-radius:99px;background:linear-gradient(90deg,var(--amber) var(--p),var(--line) var(--p))}
+input[type=range]::-moz-range-track{height:8px;border-radius:99px;background:linear-gradient(90deg,var(--amber) var(--p),var(--line) var(--p))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:var(--surface-solid);border:3px solid var(--amber);margin-top:-8px;
+  box-shadow:0 0 0 0 var(--amber-soft);transition:box-shadow .2s,transform .15s}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--surface-solid);border:3px solid var(--amber)}
+input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 8px var(--amber-soft);transform:scale(1.08)}
+input[type=range]:focus{outline:none}
+.scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.7rem;color:var(--muted)}
+
+.target{margin-top:22px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-family:var(--display);font-weight:700;font-size:.85rem;min-width:46px;padding:8px 10px;border-radius:12px;border:1px solid var(--line);
+  background:var(--surface-solid);color:var(--ink);cursor:pointer;transition:transform .15s,background .2s,border-color .2s,color .2s;position:relative}
+.chip:hover{transform:translateY(-2px);border-color:var(--amber)}
+.chip.sel{background:var(--amber);color:#1a1205;border-color:var(--amber);box-shadow:0 6px 20px -6px var(--amber)}
+.chip.dead{opacity:.38;text-decoration:line-through}
+.chip:focus-visible,.step:focus-visible,button:focus-visible{outline:2px solid var(--sky);outline-offset:2px}
+
+/* gauge */
+.gauge-card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px}
+.gauge{position:relative;width:min(260px,100%);aspect-ratio:1}
+.gauge svg{width:100%;height:100%;transform:rotate(-90deg);overflow:visible}
+.ring-bg{fill:none;stroke:var(--line);stroke-width:14}
+.ring{fill:none;stroke:var(--amber);stroke-width:14;stroke-linecap:round;transition:stroke-dashoffset 1s cubic-bezier(.2,.8,.2,1),stroke .4s;filter:drop-shadow(0 0 10px var(--amber-soft))}
+.ring.ok{stroke:var(--mint)} .ring.no{stroke:var(--coral)}
+.tick{stroke:var(--muted);stroke-width:2;opacity:.5}
+.orbit{transform-origin:100px 100px;animation:spin 14s linear infinite}
+.orbit circle{fill:var(--sky)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.gauge-mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.big{font-family:var(--display);font-weight:800;font-size:clamp(3rem,12vw,4.2rem);line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.big small{font-family:var(--mono);font-size:.95rem;color:var(--muted);font-weight:500;letter-spacing:0}
+.gauge-sub{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+.verdict{font-size:1rem;max-width:34ch;margin:6px 0 0;min-height:3em}
+.verdict strong{color:var(--amber)}
+.badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:.75rem;font-weight:700;padding:4px 10px;border-radius:99px}
+.badge.ok{background:var(--mint-soft);color:var(--mint)}
+.badge.no{background:var(--coral-soft);color:var(--coral)}
+.badge.mid{background:var(--amber-soft);color:var(--amber)}
+.pulse{animation:pulse .6s ease}
+@keyframes pulse{0%{transform:scale(1)}40%{transform:scale(1.08)}100%{transform:scale(1)}}
+
+/* what-if */
+.whatif-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.whatif-head h2,.ladder h2{font-family:var(--display);font-weight:700;font-size:1.15rem;margin:0}
+.whatif-head p,.ladder>p{margin:4px 0 0;color:var(--muted);font-size:.9rem}
+.result{display:flex;align-items:center;gap:14px}
+.result .tot{font-family:var(--mono);font-weight:700;font-size:1.6rem;font-variant-numeric:tabular-nums}
+.result .tot small{color:var(--muted);font-size:.85rem}
+.grade-pop{font-family:var(--display);font-weight:800;font-size:1.7rem;min-width:2.6ch;text-align:center;padding:6px 12px;border-radius:14px;background:var(--amber);color:#1a1205;
+  box-shadow:0 8px 24px -10px var(--amber)}
+.grade-pop.f{background:var(--coral);color:#fff;box-shadow:0 8px 24px -10px var(--coral)}
+.teerow{display:flex;align-items:center;gap:14px;margin-top:14px}
+.teerow output{font-family:var(--mono);font-weight:700;min-width:7ch;text-align:right}
+#tee{--p:50%}
+#tee::-webkit-slider-runnable-track{background:linear-gradient(90deg,var(--sky) var(--p),var(--line) var(--p))}
+#tee::-moz-range-track{background:linear-gradient(90deg,var(--sky) var(--p),var(--line) var(--p))}
+#tee::-webkit-slider-thumb{border-color:var(--sky)}
+#tee::-moz-range-thumb{border-color:var(--sky)}
+
+.stack{position:relative;height:38px;border-radius:12px;background:var(--line);margin-top:30px;overflow:visible}
+.seg{position:absolute;top:0;bottom:0;transition:width .6s cubic-bezier(.2,.8,.2,1),left .6s cubic-bezier(.2,.8,.2,1)}
+.seg.ica{left:0;background:var(--amber);border-radius:12px 0 0 12px}
+.seg.tee{background:repeating-linear-gradient(135deg,var(--sky) 0 8px,color-mix(in srgb,var(--sky) 80%,transparent) 8px 16px);
+  background-size:22px 22px;animation:stripes 1.2s linear infinite}
+@keyframes stripes{to{background-position:22px 0}}
+.mark{position:absolute;top:-22px;bottom:-6px;width:0;border-left:1.5px dashed var(--muted);transform:translateX(-.75px);transition:left .4s}
+.mark span{position:absolute;top:0;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:.62rem;color:var(--muted);white-space:nowrap}
+.mark.hit{border-color:var(--ink)} .mark.hit span{color:var(--ink);font-weight:700}
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font-size:.8rem;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+/* ladder */
+.ladder-list{display:flex;flex-direction:column;gap:6px;margin-top:16px}
+.lrow{display:grid;grid-template-columns:52px 72px 1fr 64px 108px;align-items:center;gap:12px;padding:8px 10px;border-radius:12px;cursor:pointer;
+  transition:background .2s,transform .2s;border:1px solid transparent}
+.lrow:hover{background:var(--surface-solid);transform:translateX(4px)}
+.lrow.sel{border-color:var(--amber);background:var(--amber-soft)}
+.lrow .g{font-family:var(--display);font-weight:800;font-size:1.05rem}
+.cut{font-family:var(--mono);width:100%;padding:5px 6px;border:1px solid var(--line);border-radius:8px;background:var(--surface-solid);color:var(--ink);font-size:.85rem;text-align:center}
+.cut:focus{outline:2px solid var(--amber);outline-offset:1px}
+.track{height:10px;border-radius:99px;background:var(--line);position:relative;overflow:hidden}
+.fill{position:absolute;inset:0 auto 0 0;width:0;border-radius:99px;transition:width .9s cubic-bezier(.2,.8,.2,1),background .3s}
+.fill.ok{background:linear-gradient(90deg,var(--mint),var(--amber))}
+.fill.no{background:var(--coral);opacity:.6}
+.fill.yes{background:var(--mint)}
+.need{font-family:var(--mono);font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.pill{justify-self:end;font-family:var(--mono);font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.pill.ok{background:var(--amber-soft);color:var(--amber)}
+.pill.no{background:var(--coral-soft);color:var(--coral)}
+.pill.yes{background:var(--mint-soft);color:var(--mint)}
+.lhead{display:grid;grid-template-columns:52px 72px 1fr 64px 108px;gap:12px;padding:0 10px;font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.lhead span:nth-child(4){text-align:right} .lhead span:nth-child(5){text-align:right}
+@media (max-width:560px){
+  .lrow,.lhead{grid-template-columns:40px 58px 1fr 48px;gap:8px}
+  .lrow .pill,.lhead span:nth-child(5){display:none}
+}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:.82rem;margin-top:16px}
+.btn{font:inherit;font-weight:600;font-size:.82rem;border:1px solid var(--line);background:var(--surface-solid);color:var(--ink);padding:8px 14px;border-radius:10px;cursor:pointer;transition:border-color .2s,transform .15s}
+.btn:hover{border-color:var(--amber)} .btn:active{transform:scale(.96)}
+
+/* confetti burst */
+.burst{position:fixed;pointer-events:none;z-index:50;width:8px;height:8px;border-radius:2px}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">ICA + TEE grade planner</div>
+      <h1>What do I need in the <em>TEE?</em></h1>
+    </div>
+    <div class="formula">Total = <b>ICA</b> /50 + <b>TEE</b> /100 ÷ 2</div>
+  </header>
+
+  <div class="board">
+    <section class="card">
+      <label class="lbl" for="ica">Your ICA score</label>
+      <div class="ica-top">
+        <button class="step" id="minus" type="button" aria-label="Decrease ICA by 0.5">−</button>
+        <div class="ica-num"><input id="ica" type="number" inputmode="decimal" min="0" max="50" step="0.5" value="43"><span>/ 50</span></div>
+        <button class="step" id="plus" type="button" aria-label="Increase ICA by 0.5">+</button>
+      </div>
+      <input id="icaRange" type="range" min="0" max="50" step="0.5" value="43" aria-label="ICA score slider">
+      <div class="scale"><span>0</span><span>10</span><span>20</span><span>30</span><span>40</span><span>50</span></div>
+      <div id="err" class="err" hidden>ICA has to be between 0 and 50.</div>
+
+      <div class="target">
+        <span class="lbl">Target grade</span>
+        <div class="chips" id="chips" role="radiogroup" aria-label="Target grade"></div>
+      </div>
+    </section>
+
+    <section class="card gauge-card" aria-live="polite">
+      <div class="gauge">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <circle class="ring-bg" cx="100" cy="100" r="80"></circle>
+          <g id="ticks"></g>
+          <circle class="ring" id="ring" cx="100" cy="100" r="80" stroke-dasharray="502.65" stroke-dashoffset="502.65"></circle>
+          <g class="orbit"><circle cx="100" cy="6" r="3.5"></circle></g>
+        </svg>
+        <div class="gauge-mid">
+          <div class="big" id="bigNum">0</div>
+          <div class="gauge-sub" id="bigSub">needed in TEE / 100</div>
+        </div>
+      </div>
+      <span class="badge mid" id="badge">Possible</span>
+      <p class="verdict" id="verdict"></p>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="whatif-head">
+      <div>
+        <h2>What if I score…</h2>
+        <p>Drag to try a TEE score and see your final total and grade.</p>
+      </div>
+      <div class="result">
+        <div class="tot"><span id="total">0</span><small> / 100</small></div>
+        <div class="grade-pop" id="gradePop">A+</div>
+      </div>
+    </div>
+    <div class="teerow">
+      <input id="tee" type="range" min="0" max="100" step="1" value="84" aria-label="Expected TEE score">
+      <output id="teeOut" for="tee">84 / 100</output>
+    </div>
+    <div class="stack" id="stack">
+      <div class="seg ica" id="segIca"></div>
+      <div class="seg tee" id="segTee"></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--amber)"></i>ICA (counted as is)</span>
+      <span><i style="background:var(--sky)"></i>TEE (scaled to 50)</span>
+      <span>Dashed lines are grade cutoffs</span>
+    </div>
+  </section>
+
+  <section class="card ladder">
+    <h2>Every grade at a glance</h2>
+    <p>Bar length shows how much of the TEE paper you need. Tap a row to make it your target. Edit any cutoff to match your school.</p>
+    <div class="ladder-list">
+      <div class="lhead"><span>Grade</span><span>Cutoff</span><span>TEE needed</span><span>Marks</span><span>Status</span></div>
+      <div id="ladder"></div>
+    </div>
+    <div class="foot">
+      <span>Default cutoffs follow a common NMIMS-style scale. Your settings are saved in this browser.</span>
+      <button class="btn" id="reset" type="button">Reset cutoffs</button>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+const DEFAULTS=[["A+",85],["A",80],["A-",75],["B+",70],["B",65],["B-",60],["C+",55],["C",50],["C-",45],["D",40]];
+const RM=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+
+let cuts=DEFAULTS.map(r=>[...r]);
+try{const s=JSON.parse(store.get("teeCuts"));if(Array.isArray(s)&&s.length===DEFAULTS.length)cuts=s;}catch(e){}
+let target=+(store.get("teeTarget")||0); if(!(target>=0&&target<cuts.length))target=0;
+
+const $=id=>document.getElementById(id);
+const ica=$("ica"),range=$("icaRange"),tee=$("tee");
+const v0=store.get("teeIca"); if(v0!==null&&v0!==""){ica.value=v0;range.value=v0;}
+const t0=store.get("teeWhatIf"); if(t0!==null)tee.value=t0;
+
+const need=(cut,i)=>Math.max(0,2*(cut-i));
+const fmt=n=>Number.isInteger(n)?String(n):(Math.round(n*10)/10).toFixed(1);
+const C=2*Math.PI*80;
+
+// ring ticks every 10
+const ticks=$("ticks");
+for(let k=0;k<10;k++){const a=k/10*2*Math.PI;const x1=100+92*Math.cos(a),y1=100+92*Math.sin(a),x2=100+97*Math.cos(a),y2=100+97*Math.sin(a);
+  const l=document.createElementNS("http://www.w3.org/2000/svg","line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("class","tick");ticks.appendChild(l);}
+
+// animated number
+const tweens=new WeakMap();
+function tweenTo(el,to,dec){
+  const from=parseFloat(el.dataset.v||"0");el.dataset.v=to;
+  if(RM||from===to){el.textContent=dec?fmt(to):Math.round(to);return;}
+  const prev=tweens.get(el);if(prev)cancelAnimationFrame(prev);
+  const t0=performance.now(),d=700;
+  const step=t=>{const p=Math.min(1,(t-t0)/d),e=1-Math.pow(1-p,3),v=from+(to-from)*e;
+    el.textContent=p<1?(dec?(Math.round(v*2)/2).toString():Math.round(v)):(dec?fmt(to):Math.round(to));
+    if(p<1)tweens.set(el,requestAnimationFrame(step));};
+  tweens.set(el,requestAnimationFrame(step));
+}
+function pulse(el){el.classList.remove("pulse");void el.offsetWidth;el.classList.add("pulse");}
+
+function setP(r){r.style.setProperty("--p",((r.value-r.min)/(r.max-r.min)*100)+"%");}
+
+// chips
+function buildChips(){
+  $("chips").innerHTML=cuts.map(([g],k)=>`<button type="button" role="radio" class="chip" data-k="${k}">${g}</button>`).join("");
+  $("chips").querySelectorAll(".chip").forEach(b=>b.addEventListener("click",()=>selectTarget(+b.dataset.k)));
+}
+// ladder
+function buildLadder(){
+  $("ladder").innerHTML=cuts.map(([g,c],k)=>`<div class="lrow" data-k="${k}">
+    <span class="g">${g}</span>
+    <input class="cut" id="cut-${k}" type="number" min="0" max="100" step="1" value="${c}" aria-label="${g} cutoff out of 100">
+    <div class="track"><div class="fill"></div></div>
+    <span class="need">—</span><span class="pill">—</span></div>`).join("");
+  $("ladder").querySelectorAll(".lrow").forEach(row=>{
+    row.addEventListener("click",e=>{if(e.target.classList.contains("cut"))return;selectTarget(+row.dataset.k);});
+  });
+  $("ladder").querySelectorAll(".cut").forEach(inp=>inp.addEventListener("input",()=>{
+    const k=+inp.closest(".lrow").dataset.k,v=parseFloat(inp.value);
+    if(!isNaN(v)&&v>=0&&v<=100){cuts[k][1]=v;store.set("teeCuts",JSON.stringify(cuts));update();}
+  }));
+}
+// what-if cutoff marks
+function buildMarks(){
+  const st=$("stack");st.querySelectorAll(".mark").forEach(m=>m.remove());
+  const shown=cuts.filter((_,k)=>k%2===0||k===cuts.length-1);
+  cuts.forEach(([g,c],k)=>{
+    if(!(k===0||k===2||k===4||k===7||k===9))return;
+    const m=document.createElement("div");m.className="mark";m.dataset.k=k;m.style.left=c+"%";m.innerHTML=`<span>${g}</span>`;st.appendChild(m);
+  });
+}
+
+function selectTarget(k){target=k;store.set("teeTarget",k);update(true);}
+
+function gradeFor(total){for(const [g,c] of cuts){if(total>=c)return g;}return "F";}
+
+let lastGrade=null,lastState=null;
+function update(fromTarget){
+  setP(range);setP(tee);
+  const i=parseFloat(ica.value);
+  const bad=isNaN(i)||i<0||i>50;
+  $("err").hidden=!bad;
+  if(bad)return;
+
+  // ladder + chips
+  let bestK=null;
+  document.querySelectorAll(".lrow").forEach(row=>{
+    const k=+row.dataset.k,[g,c]=cuts[k],n=need(c,i);
+    const fill=row.querySelector(".fill"),nd=row.querySelector(".need"),pill=row.querySelector(".pill");
+    row.classList.toggle("sel",k===target);
+    if(n>100){fill.className="fill no";fill.style.width="100%";nd.textContent="—";pill.className="pill no";pill.textContent="Out of reach";}
+    else if(n===0){fill.className="fill yes";fill.style.width="3%";nd.textContent="0";pill.className="pill yes";pill.textContent="Secured";}
+    else{fill.className="fill ok";fill.style.width=n+"%";nd.textContent=fmt(n);pill.className="pill ok";pill.textContent="Possible";}
+    if(bestK===null&&n<=100)bestK=k;
+  });
+  document.querySelectorAll(".chip").forEach(b=>{const k=+b.dataset.k,n=need(cuts[k][1],i);
+    b.classList.toggle("sel",k===target);b.setAttribute("aria-checked",k===target);b.classList.toggle("dead",n>100);});
+
+  // gauge
+  const [g,c]=cuts[target],n=need(c,i);
+  const ring=$("ring"),big=$("bigNum"),badge=$("badge"),verdict=$("verdict");
+  let state;
+  if(n>100){
+    state="no";ring.setAttribute("class","ring no");ring.style.strokeDashoffset=0;
+    big.dataset.v="0";big.innerHTML="—";
+    $("bigSub").textContent="not reachable";
+    badge.className="badge no";badge.textContent="Out of reach";
+    verdict.innerHTML=`Even 100 in the TEE gives a total of ${fmt(i+50)}, short of the ${c} needed for ${g}.`+
+      (bestK!==null?` Your best possible grade is <strong>${cuts[bestK][0]}</strong>.`:"");
+  }else if(n===0){
+    state="yes";ring.setAttribute("class","ring ok");ring.style.strokeDashoffset=C;
+    tweenTo(big,0,true);$("bigSub").textContent="needed in TEE / 100";
+    badge.className="badge ok";badge.textContent="Already secured";
+    verdict.innerHTML=`Your ICA alone already reaches ${c}. <strong>${g}</strong> is locked in as long as you meet any TEE passing rule.`;
+  }else{
+    state="ok";ring.setAttribute("class","ring");ring.style.strokeDashoffset=C*(1-n/100);
+    tweenTo(big,n,true);$("bigSub").textContent="needed in TEE / 100";
+    badge.className=n>=90?"badge no":n>=70?"badge mid":"badge ok";
+    badge.textContent=n>=90?"Tough but possible":n>=70?"Within reach":"Comfortable";
+    verdict.innerHTML=`Score <strong>${fmt(n)}</strong> or more in the TEE for <strong>${g}</strong>. That is ${fmt(n/2)} of the 50 scaled marks, for a total of ${c}.`;
+  }
+  if(fromTarget||state!==lastState)pulse(badge);
+  lastState=state;
+
+  // what-if
+  const t=+tee.value,total=i+t/2;
+  $("teeOut").textContent=t+" / 100";
+  tweenTo($("total"),total,true);
+  $("segIca").style.width=(i)+"%";
+  $("segTee").style.left=(i)+"%";$("segTee").style.width=(t/2)+"%";
+  $("segTee").style.borderRadius=(i+t/2>=99.5)?"0 12px 12px 0":"0";
+  document.querySelectorAll(".mark").forEach(m=>{const k=+m.dataset.k;m.style.left=cuts[k][1]+"%";m.querySelector("span").textContent=cuts[k][0];m.classList.toggle("hit",total>=cuts[k][1]);});
+  const gr=gradeFor(total),pop=$("gradePop");
+  pop.textContent=gr;pop.classList.toggle("f",gr==="F");
+  if(gr!==lastGrade&&lastGrade!==null){pulse(pop);if(gr===cuts[0][0])burst(pop);}
+  lastGrade=gr;
+}
+
+// small confetti burst when the what-if hits the top grade
+function burst(el){
+  if(RM)return;
+  const r=el.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+  const cols=["var(--amber)","var(--mint)","var(--sky)","var(--coral)"];
+  for(let k=0;k<26;k++){
+    const p=document.createElement("div");p.className="burst";p.style.left=cx+"px";p.style.top=cy+"px";p.style.background=cols[k%4];
+    document.body.appendChild(p);
+    const a=Math.random()*Math.PI*2,d=60+Math.random()*90;
+    p.animate([{transform:"translate(-50%,-50%) rotate(0)",opacity:1},
+      {transform:`translate(calc(-50% + ${Math.cos(a)*d}px),calc(-50% + ${Math.sin(a)*d+40}px)) rotate(${Math.random()*540}deg)`,opacity:0}],
+      {duration:900+Math.random()*400,easing:"cubic-bezier(.2,.8,.2,1)"}).onfinish=()=>p.remove();
+  }
+}
+
+function setIca(v){v=Math.max(0,Math.min(50,v));ica.value=v;range.value=v;store.set("teeIca",v);update();}
+ica.addEventListener("input",()=>{if(ica.value!=="")range.value=ica.value;store.set("teeIca",ica.value);update();});
+range.addEventListener("input",()=>setIca(+range.value));
+$("minus").addEventListener("click",()=>setIca((parseFloat(ica.value)||0)-.5));
+$("plus").addEventListener("click",()=>setIca((parseFloat(ica.value)||0)+.5));
+tee.addEventListener("input",()=>{store.set("teeWhatIf",tee.value);update();});
+$("reset").addEventListener("click",()=>{cuts=DEFAULTS.map(r=>[...r]);store.del("teeCuts");buildChips();buildLadder();buildMarks();update();});
+
+buildChips();buildLadder();buildMarks();
+requestAnimationFrame(()=>update());
+})();
+</script>
+</body>
+</html>
